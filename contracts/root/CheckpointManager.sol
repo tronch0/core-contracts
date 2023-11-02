@@ -8,6 +8,7 @@ import "../interfaces/root/ICheckpointManager.sol";
 import "../interfaces/common/IBLS.sol";
 import "../interfaces/common/IBN256G2.sol";
 
+
 contract CheckpointManager is ICheckpointManager, Initializable {
     using ArraysUpgradeable for uint256[];
     using Merkle for bytes32;
@@ -27,8 +28,13 @@ contract CheckpointManager is ICheckpointManager, Initializable {
     uint256[] public checkpointBlockNumbers;
     bytes32 public currentValidatorSetHash;
 
+    // Mapping to store price feed. Assuming price is represented as a uint256.
+    mapping(uint256 => uint256) private priceFeeds;
+
     // slither-disable-next-line naming-convention
     address private immutable _INITIALIZER;
+
+    event PriceUpdated(uint256 indexed currency, uint256 price);
 
     /// @notice If the contract is meant to be initialized at a later time, specifiy the address that will initialize it.
     /// @notice Otherwise, pass `address(0)`.
@@ -69,7 +75,8 @@ contract CheckpointManager is ICheckpointManager, Initializable {
         Checkpoint calldata checkpoint,
         uint256[2] calldata signature,
         Validator[] calldata newValidatorSet,
-        bytes calldata bitmap
+        bytes calldata bitmap,
+        BatchFeedInput[] calldata feedInputs
     ) external {
         require(currentValidatorSetHash == checkpointMetadata.currentValidatorSetHash, "INVALID_VALIDATOR_SET_HASH");
         bytes memory hash = abi.encode(
@@ -82,6 +89,7 @@ contract CheckpointManager is ICheckpointManager, Initializable {
                     checkpoint.epoch,
                     checkpoint.eventRoot,
                     checkpointMetadata.currentValidatorSetHash,
+                    keccak256(abi.encode(feedInputs)),
                     keccak256(abi.encode(newValidatorSet))
                 )
             )
@@ -106,7 +114,48 @@ contract CheckpointManager is ICheckpointManager, Initializable {
 
         currentCheckpointBlockNumber = checkpoint.blockNumber;
 
+        _updateFeeds(feedInputs, checkpoint.eventRoot);
+
         _setNewValidatorSet(newValidatorSet);
+    }
+
+    function _updateFeeds(BatchFeedInput[] calldata inputs, bytes32 eventRoot) private {
+        uint256 length = inputs.length;
+        for (uint256 i = 0; i < length; i++) {
+            _updateSingleFeed(inputs[i].leafIndex, inputs[i].unhashedLeaf, inputs[i].proof, eventRoot);
+        }
+    }
+
+    function _updateSingleFeed(
+        uint256 leafIndex,
+        bytes calldata unhashedLeaf,
+        bytes32[] calldata proof,
+        bytes32 eventRoot
+    ) private {
+        require(
+            keccak256(unhashedLeaf).checkMembership(leafIndex, eventRoot, proof),
+            // _verifyEventMembershipByBlockNumber(blockNumber, keccak256(unhashedLeaf), leafIndex, proof),
+            "INVALID_PROOF"
+        );
+
+        // Assuming data contains the currency symbol (as bytes32) followed by its price (as uint256).
+        (uint256 currency, uint256 price) = abi.decode(unhashedLeaf, (uint256, uint256));
+
+        priceFeeds[currency] = price;
+
+        emit PriceUpdated(currency, price);
+    }
+
+    // remove after merkle-proof verifcation moves outside of this contract
+    function _verifyEventMembershipByBlockNumber(
+        uint256 blockNumber,
+        bytes32 leaf,
+        uint256 leafIndex,
+        bytes32[] calldata proof
+    ) private view returns (bool) {
+        bytes32 eventRoot = getEventRootByBlock(blockNumber);
+        require(eventRoot != bytes32(0), "NO_EVENT_ROOT_FOR_BLOCK_NUMBER");
+        return leaf.checkMembership(leafIndex, eventRoot, proof);
     }
 
     /**
@@ -154,6 +203,43 @@ contract CheckpointManager is ICheckpointManager, Initializable {
     function getEventRootByBlock(uint256 blockNumber) public view returns (bytes32) {
         return checkpoints[checkpointBlockNumbers.findUpperBound(blockNumber) + 1].eventRoot;
     }
+
+    function getPrice(uint256 _pairIndex) external view returns (uint256, bool) {
+        bool flag;
+        uint256 res = priceFeeds[_pairIndex];
+
+        if (res == 0) {
+            flag = false;
+        } else {
+            flag = true;
+        }
+
+        return (res, flag);
+    }
+
+    function getPrices(
+        uint256[] memory _pairIndexes
+    ) external view returns (uint256[] memory, bool[] memory) {
+            bool[] memory flags = new bool[](_pairIndexes.length);
+            uint256[] memory prices = new uint256[](_pairIndexes.length);
+
+            for (uint256 i = 0; i < _pairIndexes.length; i++) {
+
+                uint256 price = priceFeeds[_pairIndexes[i]];
+
+                if (price == 0) {
+                    flags[i] = false;
+                } else {
+                    flags[i] = true;
+                }
+
+                prices[i] = price;
+            }
+
+        return (prices, flags);
+    }
+
+
 
     function _setNewValidatorSet(Validator[] calldata newValidatorSet) private {
         uint256 length = newValidatorSet.length;
@@ -244,4 +330,6 @@ contract CheckpointManager is ICheckpointManager, Initializable {
 
     // slither-disable-next-line unused-state,naming-convention
     uint256[50] private __gap;
+
+
 }

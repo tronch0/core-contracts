@@ -26,6 +26,14 @@ interface ICheckpointManager {
         uint256 votingPower;
     }
 
+
+    struct BatchFeedInput {
+        uint256 blockNumber;
+        uint256 leafIndex;
+        bytes unhashedLeaf;
+        bytes32[] proof;
+    }
+
     /**
      * @notice Function to submit a single checkpoint for an epoch to CheckpointManager
      * @dev Contract internally verifies provided signature against stored validator set
@@ -40,7 +48,8 @@ interface ICheckpointManager {
         Checkpoint calldata checkpoint,
         uint256[2] calldata signature,
         Validator[] calldata newValidatorSet,
-        bytes calldata bitmap
+        bytes calldata bitmap,
+        BatchFeedInput[] calldata feedInputs 
     ) external;
 
     /**
@@ -85,4 +94,23 @@ interface ICheckpointManager {
      * @param blockNumber The block number to get the event root for
      */
     function getEventRootByBlock(uint256 blockNumber) external view returns (bytes32);
+
+
+        /**
+     * @notice Function to get the price for a pair index.
+     * @param _pairIndex The index of the pair to get the current price.
+     * @return uint256 The price of the pair index.
+     * @return bool flag indicating if the value is available or not.
+     */
+    function getPrice(uint256 _pairIndex) external view returns (uint256, bool);
+
+ 
+        /**
+     * @notice Function to get the price for multiple of pair indexes.
+     * @param _pairIndexes An array of pair indexes.
+     * @return Arrays of prices for the pair indexes.
+     * @return Arrays of flags indicating if the values are available or not.
+     */
+    function getPrices(uint256[] memory _pairIndexes) external view returns (uint256[] memory, bool[] memory);
+
 }
