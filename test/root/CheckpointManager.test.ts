@@ -1065,7 +1065,7 @@ describe("CheckpointManager", () => {
   });
 
 
-  it("getPrice returns correct price for given pairIndex", async () => {
+  it("Get Price by valid pairIndex", async () => {
     const pairIndex = 1;  // You can change this as per your requirements
     
     const expectedPrice = ethers.utils.parseEther("1000");  // Adjust this value according to your logic
@@ -1077,7 +1077,7 @@ describe("CheckpointManager", () => {
   });
 
 
-  it("getPrice returns price for not existing pairIndex", async () => {
+  it("Get Price by invalid pairIndex", async () => {
     const pairIndex = 4;  // You can change this as per your requirements
     
     const expectedPrice = ethers.utils.parseEther("0");  // Adjust this value according to your logic
@@ -1088,7 +1088,7 @@ describe("CheckpointManager", () => {
     expect(flag).to.be.false; // If you also want to check the flag value
   });
 
-  it("getPrices returns correct prices and validity for given indices", async () => {
+  it("Get Prices returns multiple Prices for multiple valid and invalid pairIndex", async () => {
     const pairIndices = [1, 2, 3];
     
     const expectedPrices = [
