@@ -2,6 +2,7 @@ import { ethers } from "hardhat";
 import { BigNumberish, BigNumber } from "ethers";
 import * as mcl from "../../../ts/mcl";
 const input = process.argv[2];
+import { MerkleTree } from "merkletreejs";
 
 // let DOMAIN = ethers.utils.arrayify(ethers.utils.hexlify(ethers.utils.randomBytes(32)));
 // let eventRoot = ethers.utils.arrayify(ethers.utils.hexlify(ethers.utils.randomBytes(32)));
@@ -14,6 +15,7 @@ let aggMessagePoints: mcl.MessagePoint[] = [];
 let accounts: any[] = [];
 let newValidator: any;
 let newAddress: any;
+let feedInputsArray: any[] = [];
 let validatorSet: any[] = [];
 let submitCounter: number;
 let eventRoot: any;
@@ -29,6 +31,29 @@ async function generateMsg() {
 
   await mcl.init();
 
+  const unhashedLeaf = ethers.utils.defaultAbiCoder.encode(["uint256", "uint256"], [1, ethers.utils.parseEther("1000")])
+
+  const leaves = [
+    ethers.utils.keccak256(unhashedLeaf),
+    ethers.utils.hexlify(ethers.utils.randomBytes(32)),
+    ethers.utils.hexlify(ethers.utils.randomBytes(32)),
+    ethers.utils.hexlify(ethers.utils.randomBytes(32)),
+  ];
+  const tree = new MerkleTree(leaves, ethers.utils.keccak256);
+  const leafIndex = 0;
+
+  feedInputsArray = [{
+    blockNumber: 1,
+    leafIndex: leafIndex,
+    unhashedLeaf: unhashedLeaf,
+    proof: tree.getHexProof(leaves[leafIndex]),
+  }];
+
+  const feedInputsInfo = {
+    inputs: feedInputsArray,
+    size: feedInputsArray.length,
+  } 
+
   accounts = await ethers.getSigners();
   validatorSet = [];
   for (let i = 0; i < validatorSetSize; i++) {
@@ -41,7 +66,7 @@ async function generateMsg() {
     });
   }
 
-  eventRoot = ethers.utils.hexlify(ethers.utils.randomBytes(32));
+  eventRoot = tree.getHexRoot();
   blockHash = ethers.utils.hexlify(ethers.utils.randomBytes(32));
   currentValidatorSetHash = ethers.utils.keccak256(
     ethers.utils.defaultAbiCoder.encode(
@@ -63,20 +88,19 @@ async function generateMsg() {
 
   const output = ethers.utils.defaultAbiCoder.encode(
     [
-      "uint256",
-      "tuple(address _address, uint256[4] blsKey, uint256 votingPower)[]",
+      "tuple(tuple(address _address, uint256[4] blsKey, uint256 votingPower)[] validatorSet, uint256 size)",
       "uint256[2][]",
       "bytes32[]",
       "bytes[]",
       "uint256[]",
-    ],
+      "tuple(tuple(uint256 blockNumber, uint256 leafIndex, bytes unhashedLeaf, bytes32[] proof)[] inputs, uint256 size)"    ],
     [
-      validatorSetSize,
-      validatorSet,
+      [validatorSet, validatorSetSize],
       aggMessagePoints,
       [eventRoot, blockHash, currentValidatorSetHash],
       bitmaps,
       aggVotingPowers,
+      [feedInputsInfo.inputs, feedInputsInfo.size]
     ]
   );
 
@@ -107,9 +131,16 @@ function generateSignature0() {
     )
   );
 
+  const messageOfFeedInputs = ethers.utils.keccak256(
+    ethers.utils.defaultAbiCoder.encode(
+      ["tuple(uint256 blockNumber, uint256 leafIndex, bytes unhashedLeaf, bytes32[] proof)[]"],
+      [feedInputsArray]
+    )
+  );
+
   const message = ethers.utils.keccak256(
     ethers.utils.defaultAbiCoder.encode(
-      ["uint256", "uint256", "bytes32", "uint256", "uint256", "bytes32", "bytes32", "bytes32"],
+      ["uint256", "uint256", "bytes32", "uint256", "uint256", "bytes32", "bytes32", "bytes32", "bytes32"],
       [
         chainId + 1, //for signature verify fail
         checkpoint.blockNumber,
@@ -118,6 +149,7 @@ function generateSignature0() {
         checkpoint.epoch,
         checkpoint.eventRoot,
         checkpointMetadata.currentValidatorSetHash,
+        messageOfFeedInputs,
         messageOfValidatorSet,
       ]
     )
@@ -176,9 +208,16 @@ function generateSignature1() {
     )
   );
 
+  const messageOfFeedInputs = ethers.utils.keccak256(
+    ethers.utils.defaultAbiCoder.encode(
+      ["tuple(uint256 blockNumber, uint256 leafIndex, bytes unhashedLeaf, bytes32[] proof)[]"],
+      [feedInputsArray]
+    )
+  );
+
   const message = ethers.utils.keccak256(
     ethers.utils.defaultAbiCoder.encode(
-      ["uint256", "uint256", "bytes32", "uint256", "uint256", "bytes32", "bytes32", "bytes32"],
+      ["uint256", "uint256", "bytes32", "uint256", "uint256", "bytes32", "bytes32", "bytes32", "bytes32"],
       [
         chainId,
         checkpoint.blockNumber,
@@ -187,6 +226,7 @@ function generateSignature1() {
         checkpoint.epoch,
         checkpoint.eventRoot,
         checkpointMetadata.currentValidatorSetHash,
+        messageOfFeedInputs,
         messageOfValidatorSet,
       ]
     )
@@ -245,9 +285,16 @@ function generateSignature2() {
     )
   );
 
+  const messageOfFeedInputs = ethers.utils.keccak256(
+    ethers.utils.defaultAbiCoder.encode(
+      ["tuple(uint256 blockNumber, uint256 leafIndex, bytes unhashedLeaf, bytes32[] proof)[]"],
+      [feedInputsArray]
+    )
+  );
+
   const message = ethers.utils.keccak256(
     ethers.utils.defaultAbiCoder.encode(
-      ["uint256", "uint256", "bytes32", "uint256", "uint256", "bytes32", "bytes32", "bytes32"],
+      ["uint256", "uint256", "bytes32", "uint256", "uint256", "bytes32", "bytes32", "bytes32", "bytes32"],
       [
         chainId,
         checkpoint.blockNumber,
@@ -256,6 +303,7 @@ function generateSignature2() {
         checkpoint.epoch,
         checkpoint.eventRoot,
         checkpointMetadata.currentValidatorSetHash,
+        messageOfFeedInputs,
         messageOfValidatorSet,
       ]
     )
@@ -314,9 +362,17 @@ function generateSignature3() {
     )
   );
 
+  const messageOfFeedInputs = ethers.utils.keccak256(
+    ethers.utils.defaultAbiCoder.encode(
+      ["tuple(uint256 blockNumber, uint256 leafIndex, bytes unhashedLeaf, bytes32[] proof)[]"],
+      [feedInputsArray]
+    )
+  );
+
+
   const message = ethers.utils.keccak256(
     ethers.utils.defaultAbiCoder.encode(
-      ["uint256", "uint256", "bytes32", "uint256", "uint256", "bytes32", "bytes32", "bytes32"],
+      ["uint256", "uint256", "bytes32", "uint256", "uint256", "bytes32", "bytes32", "bytes32", "bytes32"],
       [
         chainId,
         checkpoint.blockNumber,
@@ -325,6 +381,7 @@ function generateSignature3() {
         checkpoint.epoch,
         checkpoint.eventRoot,
         checkpointMetadata.currentValidatorSetHash,
+        messageOfFeedInputs,
         messageOfValidatorSet,
       ]
     )
@@ -383,9 +440,16 @@ function generateSignature4() {
     )
   );
 
+  const messageOfFeedInputs = ethers.utils.keccak256(
+    ethers.utils.defaultAbiCoder.encode(
+      ["tuple(uint256 blockNumber, uint256 leafIndex, bytes unhashedLeaf, bytes32[] proof)[]"],
+      [feedInputsArray]
+    )
+  );
+
   const message = ethers.utils.keccak256(
     ethers.utils.defaultAbiCoder.encode(
-      ["uint256", "uint256", "bytes32", "uint256", "uint256", "bytes32", "bytes32", "bytes32"],
+      ["uint256", "uint256", "bytes32", "uint256", "uint256", "bytes32", "bytes32", "bytes32", "bytes32"],
       [
         chainId,
         checkpoint.blockNumber,
@@ -394,6 +458,7 @@ function generateSignature4() {
         checkpoint.epoch,
         checkpoint.eventRoot,
         checkpointMetadata.currentValidatorSetHash,
+        messageOfFeedInputs,
         messageOfValidatorSet,
       ]
     )
@@ -452,9 +517,16 @@ function generateSignature5() {
     )
   );
 
+  const messageOfFeedInputs = ethers.utils.keccak256(
+    ethers.utils.defaultAbiCoder.encode(
+      ["tuple(uint256 blockNumber, uint256 leafIndex, bytes unhashedLeaf, bytes32[] proof)[]"],
+      [feedInputsArray]
+    )
+  );
+
   const message = ethers.utils.keccak256(
     ethers.utils.defaultAbiCoder.encode(
-      ["uint256", "uint256", "bytes32", "uint256", "uint256", "bytes32", "bytes32", "bytes32"],
+      ["uint256", "uint256", "bytes32", "uint256", "uint256", "bytes32", "bytes32", "bytes32", "bytes32"],
       [
         chainId,
         checkpoint.blockNumber,
@@ -463,6 +535,7 @@ function generateSignature5() {
         checkpoint.epoch,
         checkpoint.eventRoot,
         checkpointMetadata.currentValidatorSetHash,
+        messageOfFeedInputs,
         messageOfValidatorSet,
       ]
     )
@@ -521,9 +594,16 @@ function generateSignature6() {
     )
   );
 
+  const messageOfFeedInputs = ethers.utils.keccak256(
+    ethers.utils.defaultAbiCoder.encode(
+      ["tuple(uint256 blockNumber, uint256 leafIndex, bytes unhashedLeaf, bytes32[] proof)[]"],
+      [feedInputsArray]
+    )
+  );
+
   const message = ethers.utils.keccak256(
     ethers.utils.defaultAbiCoder.encode(
-      ["uint256", "uint256", "bytes32", "uint256", "uint256", "bytes32", "bytes32", "bytes32"],
+      ["uint256", "uint256", "bytes32", "uint256", "uint256", "bytes32", "bytes32", "bytes32", "bytes32"],
       [
         chainId,
         checkpoint.blockNumber,
@@ -532,6 +612,7 @@ function generateSignature6() {
         checkpoint.epoch,
         checkpoint.eventRoot,
         checkpointMetadata.currentValidatorSetHash,
+        messageOfFeedInputs,
         messageOfValidatorSet,
       ]
     )
@@ -590,9 +671,16 @@ function generateSignature7() {
     )
   );
 
+  const messageOfFeedInputs = ethers.utils.keccak256(
+    ethers.utils.defaultAbiCoder.encode(
+      ["tuple(uint256 blockNumber, uint256 leafIndex, bytes unhashedLeaf, bytes32[] proof)[]"],
+      [feedInputsArray]
+    )
+  );
+
   const message = ethers.utils.keccak256(
     ethers.utils.defaultAbiCoder.encode(
-      ["uint256", "uint256", "bytes32", "uint256", "uint256", "bytes32", "bytes32", "bytes32"],
+      ["uint256", "uint256", "bytes32", "uint256", "uint256", "bytes32", "bytes32", "bytes32", "bytes32"],
       [
         chainId,
         checkpoint.blockNumber,
@@ -601,6 +689,7 @@ function generateSignature7() {
         checkpoint.epoch,
         checkpoint.eventRoot,
         checkpointMetadata.currentValidatorSetHash,
+        messageOfFeedInputs,
         messageOfValidatorSet,
       ]
     )
@@ -664,9 +753,16 @@ function generateSignature8() {
     )
   );
 
+  const messageOfFeedInputs = ethers.utils.keccak256(
+    ethers.utils.defaultAbiCoder.encode(
+      ["tuple(uint256 blockNumber, uint256 leafIndex, bytes unhashedLeaf, bytes32[] proof)[]"],
+      [feedInputsArray]
+    )
+  );
+
   const message = ethers.utils.keccak256(
     ethers.utils.defaultAbiCoder.encode(
-      ["uint256", "uint256", "bytes32", "uint256", "uint256", "bytes32", "bytes32", "bytes32"],
+      ["uint256", "uint256", "bytes32", "uint256", "uint256", "bytes32", "bytes32", "bytes32", "bytes32"],
       [
         chainId,
         checkpoint.blockNumber,
@@ -675,6 +771,7 @@ function generateSignature8() {
         checkpoint.epoch,
         checkpoint.eventRoot,
         checkpointMetadata.currentValidatorSetHash,
+        messageOfFeedInputs,
         messageOfValidatorSet,
       ]
     )

@@ -9,14 +9,26 @@ import {BN256G2} from "contracts/common/BN256G2.sol";
 import "contracts/interfaces/Errors.sol";
 import "contracts/interfaces/root/ICheckpointManager.sol";
 
+struct FeedInputsInfo {
+    ICheckpointManager.BatchFeedInput[] inputs;
+    uint256 size;
+}
+
+struct ValidatorsInfo {
+    ICheckpointManager.Validator[] validatorSet;
+    uint256 size;
+}
+
 abstract contract Uninitialized is Test {
     CheckpointManager checkpointManager;
     BLS bls;
     BN256G2 bn256G2;
 
     uint256 submitCounter;
-    uint256 validatorSetSize;
-    ICheckpointManager.Validator[] public validatorSet;
+
+    FeedInputsInfo public feedInputsInfo;
+
+    ValidatorsInfo public validatorsInfo;
 
     address public admin;
     address public alice;
@@ -44,16 +56,25 @@ abstract contract Uninitialized is Test {
         cmd[3] = vm.toString(abi.encode(DOMAIN));
         bytes memory out = vm.ffi(cmd);
 
-        ICheckpointManager.Validator[] memory validatorSetTmp;
+        ValidatorsInfo memory newValidatorInfo;
+        FeedInputsInfo memory newFeedInputsInfo;
 
-        (validatorSetSize, validatorSetTmp, aggMessagePoints, hashes, bitmaps, aggVotingPowers) = abi.decode(
+        (newValidatorInfo, aggMessagePoints, hashes, bitmaps, aggVotingPowers, newFeedInputsInfo) = abi.decode(
             out,
-            (uint256, ICheckpointManager.Validator[], uint256[2][], bytes32[], bytes[], uint256[])
+            (ValidatorsInfo, uint256[2][], bytes32[], bytes[], uint256[], FeedInputsInfo)
         );
 
-        for (uint256 i = 0; i < validatorSetSize; i++) {
-            validatorSet.push(validatorSetTmp[i]);
+        for (uint256 i = 0; i < newValidatorInfo.size; i++) {
+            validatorsInfo.validatorSet.push(newValidatorInfo.validatorSet[i]);
         }
+        validatorsInfo.size = newValidatorInfo.size;
+
+
+        for (uint256 i = 0; i < newFeedInputsInfo.size; i++) {
+            feedInputsInfo.inputs.push(newFeedInputsInfo.inputs[i]);
+        }
+        feedInputsInfo.size = newFeedInputsInfo.size;
+
         submitCounter = 1;
     }
 }
@@ -61,7 +82,7 @@ abstract contract Uninitialized is Test {
 abstract contract Initialized is Uninitialized {
     function setUp() public virtual override {
         super.setUp();
-        checkpointManager.initialize(bls, bn256G2, submitCounter, validatorSet);
+        checkpointManager.initialize(bls, bn256G2, submitCounter, validatorsInfo.validatorSet);
     }
 }
 
@@ -81,7 +102,7 @@ abstract contract FirstSubmitted is Initialized {
             currentValidatorSetHash: hashes[2]
         });
 
-        checkpointManager.submit(checkpointMetadata, checkpoint, aggMessagePoints[3], validatorSet, bitmaps[3]);
+        checkpointManager.submit(checkpointMetadata, checkpoint, aggMessagePoints[3], validatorsInfo.validatorSet, bitmaps[3], feedInputsInfo.inputs);
     }
 }
 
@@ -91,19 +112,19 @@ contract CheckpointManager_Initialize is Uninitialized {
         checkpointManager = new CheckpointManager(INITIALIZER);
 
         vm.expectRevert();
-        checkpointManager.initialize(bls, bn256G2, submitCounter, validatorSet);
+        checkpointManager.initialize(bls, bn256G2, submitCounter, validatorsInfo.validatorSet);
     }
 
     function testInitialize() public {
-        checkpointManager.initialize(bls, bn256G2, submitCounter, validatorSet);
+        checkpointManager.initialize(bls, bn256G2, submitCounter, validatorsInfo.validatorSet);
 
         assertEq(keccak256(abi.encode(checkpointManager.bls())), keccak256(abi.encode(address(bls))));
         assertEq(keccak256(abi.encode(checkpointManager.bn256G2())), keccak256(abi.encode(address(bn256G2))));
-        assertEq(checkpointManager.currentValidatorSetLength(), validatorSetSize);
-        for (uint256 i = 0; i < validatorSetSize; i++) {
+        assertEq(checkpointManager.currentValidatorSetLength(), validatorsInfo.size);
+        for (uint256 i = 0; i < validatorsInfo.size; i++) {
             (address _address, uint256 votingPower) = checkpointManager.currentValidatorSet(i);
-            assertEq(_address, validatorSet[i]._address);
-            assertEq(votingPower, validatorSet[i].votingPower);
+            assertEq(_address, validatorsInfo.validatorSet [i]._address);
+            assertEq(votingPower, validatorsInfo.validatorSet[i].votingPower);
         }
     }
 }
@@ -123,7 +144,7 @@ contract CheckpointManager_Submit is Initialized {
         });
 
         vm.expectRevert("INVALID_VALIDATOR_SET_HASH");
-        checkpointManager.submit(checkpointMetadata, checkpoint, aggMessagePoints[0], validatorSet, bitmaps[0]);
+        checkpointManager.submit(checkpointMetadata, checkpoint, aggMessagePoints[0], validatorsInfo.validatorSet, bitmaps[0], feedInputsInfo.inputs);
     }
 
     function testCannotSubmit_InvalidSignature() public {
@@ -140,7 +161,8 @@ contract CheckpointManager_Submit is Initialized {
         });
 
         vm.expectRevert("SIGNATURE_VERIFICATION_FAILED");
-        checkpointManager.submit(checkpointMetadata, checkpoint, aggMessagePoints[0], validatorSet, bitmaps[0]);
+
+        checkpointManager.submit(checkpointMetadata, checkpoint, aggMessagePoints[0], validatorsInfo.validatorSet, bitmaps[0], feedInputsInfo.inputs);
     }
 
     function testCannotSubmit_EmptyBitmap() public {
@@ -157,7 +179,8 @@ contract CheckpointManager_Submit is Initialized {
         });
 
         vm.expectRevert("BITMAP_IS_EMPTY");
-        checkpointManager.submit(checkpointMetadata, checkpoint, aggMessagePoints[1], validatorSet, bitmaps[1]);
+
+        checkpointManager.submit(checkpointMetadata, checkpoint, aggMessagePoints[1], validatorsInfo.validatorSet, bitmaps[1], feedInputsInfo.inputs);
     }
 
     function testCannotSubmit_NotEnoughPower() public {
@@ -174,7 +197,7 @@ contract CheckpointManager_Submit is Initialized {
         });
 
         vm.expectRevert("INSUFFICIENT_VOTING_POWER");
-        checkpointManager.submit(checkpointMetadata, checkpoint, aggMessagePoints[2], validatorSet, bitmaps[2]);
+        checkpointManager.submit(checkpointMetadata, checkpoint, aggMessagePoints[2], validatorsInfo.validatorSet, bitmaps[2], feedInputsInfo.inputs);
     }
 
     function testSubmit_First() public {
@@ -190,7 +213,7 @@ contract CheckpointManager_Submit is Initialized {
             currentValidatorSetHash: hashes[2]
         });
 
-        checkpointManager.submit(checkpointMetadata, checkpoint, aggMessagePoints[3], validatorSet, bitmaps[3]);
+        checkpointManager.submit(checkpointMetadata, checkpoint, aggMessagePoints[3], validatorsInfo.validatorSet, bitmaps[3], feedInputsInfo.inputs);
 
         assertEq(checkpointManager.getEventRootByBlock(checkpoint.blockNumber), checkpoint.eventRoot);
         assertEq(checkpointManager.checkpointBlockNumbers(0), checkpoint.blockNumber);
@@ -222,7 +245,8 @@ contract CheckpointManager_SubmitSecond is FirstSubmitted {
         });
 
         vm.expectRevert("INVALID_EPOCH");
-        checkpointManager.submit(checkpointMetadata, checkpoint, aggMessagePoints[4], validatorSet, bitmaps[4]);
+
+        checkpointManager.submit(checkpointMetadata, checkpoint, aggMessagePoints[4], validatorsInfo.validatorSet, bitmaps[4], feedInputsInfo.inputs);
     }
 
     function testCannotSubmit_EmptyCheckpoint() public {
@@ -239,7 +263,8 @@ contract CheckpointManager_SubmitSecond is FirstSubmitted {
         });
 
         vm.expectRevert("EMPTY_CHECKPOINT");
-        checkpointManager.submit(checkpointMetadata, checkpoint, aggMessagePoints[5], validatorSet, bitmaps[5]);
+
+        checkpointManager.submit(checkpointMetadata, checkpoint, aggMessagePoints[5], validatorsInfo.validatorSet, bitmaps[5], feedInputsInfo.inputs);
     }
 
     function testSubmit_SameEpoch() public {
@@ -255,7 +280,7 @@ contract CheckpointManager_SubmitSecond is FirstSubmitted {
             currentValidatorSetHash: hashes[2]
         });
 
-        checkpointManager.submit(checkpointMetadata, checkpoint, aggMessagePoints[6], validatorSet, bitmaps[6]);
+        checkpointManager.submit(checkpointMetadata, checkpoint, aggMessagePoints[6], validatorsInfo.validatorSet, bitmaps[6], feedInputsInfo.inputs);
 
         assertEq(checkpointManager.getEventRootByBlock(checkpoint.blockNumber), checkpoint.eventRoot);
         assertEq(checkpointManager.checkpointBlockNumbers(0), checkpoint.blockNumber);
@@ -285,7 +310,8 @@ contract CheckpointManager_SubmitSecond is FirstSubmitted {
         });
 
         if (aggVotingPowers[7] > (checkpointManager.totalVotingPower() * 2) / 3) {
-            checkpointManager.submit(checkpointMetadata, checkpoint, aggMessagePoints[7], validatorSet, bitmaps[7]);
+
+            checkpointManager.submit(checkpointMetadata, checkpoint, aggMessagePoints[7], validatorsInfo.validatorSet, bitmaps[7], feedInputsInfo.inputs);
 
             assertEq(checkpointManager.getEventRootByBlock(checkpoint.blockNumber), checkpoint.eventRoot);
             assertEq(checkpointManager.checkpointBlockNumbers(0), checkpoint.blockNumber);
@@ -301,7 +327,8 @@ contract CheckpointManager_SubmitSecond is FirstSubmitted {
             checkpointManager.getEventMembershipByEpoch(checkpoint.epoch, checkpoint.eventRoot, leafIndex, proof);
         } else {
             vm.expectRevert("INSUFFICIENT_VOTING_POWER");
-            checkpointManager.submit(checkpointMetadata, checkpoint, aggMessagePoints[7], validatorSet, bitmaps[7]);
+
+            checkpointManager.submit(checkpointMetadata, checkpoint, aggMessagePoints[7], validatorsInfo.validatorSet, bitmaps[7], feedInputsInfo.inputs);
         }
     }
 
