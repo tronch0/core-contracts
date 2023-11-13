@@ -26,7 +26,6 @@ interface ICheckpointManager {
         uint256 votingPower;
     }
 
-
     struct BatchFeedInput {
         uint256 blockNumber;
         uint256 leafIndex;

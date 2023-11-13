@@ -134,16 +134,14 @@ contract CheckpointManager is ICheckpointManager, Initializable {
     ) private {
         require(
             keccak256(unhashedLeaf).checkMembership(leafIndex, eventRoot, proof),
-            // _verifyEventMembershipByBlockNumber(blockNumber, keccak256(unhashedLeaf), leafIndex, proof),
             "INVALID_PROOF"
         );
 
-        // Assuming data contains the currency symbol (as bytes32) followed by its price (as uint256).
-        (uint256 currency, uint256 price) = abi.decode(unhashedLeaf, (uint256, uint256));
+        (uint256 pairIndex, uint256 price) = abi.decode(unhashedLeaf, (uint256, uint256));
 
-        priceFeeds[currency] = price;
+        priceFeeds[pairIndex] = price;
 
-        emit PriceUpdated(currency, price);
+        emit PriceUpdated(pairIndex, price);
     }
 
     // remove after merkle-proof verifcation moves outside of this contract

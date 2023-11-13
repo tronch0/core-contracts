@@ -1076,7 +1076,6 @@ describe("CheckpointManager", () => {
     expect(flag).to.be.true; // If you also want to check the flag value
   });
 
-
   it("Get Price by invalid pairIndex", async () => {
     const pairIndex = 4;  // You can change this as per your requirements
     
